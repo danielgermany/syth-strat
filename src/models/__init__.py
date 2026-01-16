@@ -9,6 +9,7 @@ from .lead_lag_estimator import estimate_lead_lag, LeadLagResult
 from .regime_calibration import RegimeSwitchingCalibrator
 from .garch import GARCHModel
 from .agarch import AGARCHModel
+from .heston import HestonModel, HestonParams
 
 __all__ = [
     'GARCHParams',
@@ -23,4 +24,6 @@ __all__ = [
     'RegimeSwitchingCalibrator',
     'GARCHModel',
     'AGARCHModel',
+    'HestonModel',
+    'HestonParams',
 ]
