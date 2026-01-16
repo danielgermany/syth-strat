@@ -10,6 +10,7 @@ from .regime_calibration import RegimeSwitchingCalibrator
 from .garch import GARCHModel
 from .agarch import AGARCHModel
 from .heston import HestonModel, HestonParams
+from .jump_diffusion import JumpDiffusionModel, JumpParams
 
 __all__ = [
     'GARCHParams',
@@ -26,4 +27,6 @@ __all__ = [
     'AGARCHModel',
     'HestonModel',
     'HestonParams',
+    'JumpDiffusionModel',
+    'JumpParams',
 ]
