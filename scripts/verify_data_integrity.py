@@ -106,9 +106,9 @@ def check_database_timestamp_uniqueness(storage: DataStorage, symbol: str) -> di
 def main():
     """Verify data integrity for all instruments."""
     # Paths
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).parent.parent
     data_dir = project_root / "data"
-    db_path = project_root / "synthetic_bar_generator" / "data" / "synthetic_bars.db"
+    db_path = project_root / "data" / "synthetic_bars.db"
     
     # Initialize storage
     storage = DataStorage(str(db_path))
