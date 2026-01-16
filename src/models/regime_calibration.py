@@ -304,6 +304,29 @@ class RegimeSwitchingCalibrator:
                     mu_scaled = float(result.params.get('mu', 0.0))
                     mu = mu_scaled / scale
                     
+                    # Calculate empirical mean for this regime
+                    empirical_mean = float(np.mean(returns_k))
+                    empirical_std = float(np.std(returns_k))
+                    
+                    # Check if mu estimate is reasonable relative to empirical mean
+                    # If |mu| is much larger than |empirical_mean|, the estimate is likely spurious
+                    # Also check if mu is statistically significant (|mu| > 2*std_err)
+                    mu_std_err = None
+                    if hasattr(result, 'std_err') and 'mu' in result.std_err:
+                        mu_std_err = float(result.std_err['mu']) / scale
+                        mu_significant = abs(mu) > 2 * mu_std_err
+                    else:
+                        mu_significant = abs(mu) > 2 * empirical_std / np.sqrt(len(returns_k))
+                    
+                    # If mu estimate is implausibly large relative to empirical mean,
+                    # or if it's not statistically significant, use empirical mean instead
+                    # Reasonable threshold: |mu| should not exceed 10x |empirical_mean| + 2 std_errs
+                    threshold = max(10 * abs(empirical_mean), 2 * empirical_std / np.sqrt(len(returns_k)))
+                    if abs(mu) > threshold or not mu_significant:
+                        # Use empirical mean (which is typically near zero) instead of bad estimate
+                        mu = empirical_mean
+                        logger.debug(f"Using empirical mean {mu:.8f} instead of ARCH estimate {mu_scaled/scale:.8f} for {instrument} regime {k}")
+                    
                     # Clamp mu to reasonable range for 1-minute returns
                     # Typical 1-min returns are on order of 1e-5 (1 bp) to 1e-4 (10 bp)
                     # Cap mu at ±0.0005 (50 bp) which is extreme but possible
@@ -329,12 +352,17 @@ class RegimeSwitchingCalibrator:
                     
                     # Check and enforce stationarity: α + β + γ/2 < 1
                     persistence = alpha_raw + beta_raw + gamma_raw / 2
-                    if persistence >= 0.999:
-                        # Scale down proportionally to enforce stationarity (target 0.99)
-                        scale_factor = 0.99 / persistence
+                    # Cap persistence to reduce return autocorrelation
+                    # Very high persistence (0.99+) creates strong volatility persistence
+                    # which can lead to return autocorrelation. Cap at 0.97 for better balance
+                    max_persistence = 0.97
+                    if persistence >= max_persistence:
+                        # Scale down proportionally to enforce cap (target 0.97)
+                        scale_factor = max_persistence / persistence
                         alpha = alpha_raw * scale_factor
                         beta = beta_raw * scale_factor
                         gamma = gamma_raw * scale_factor
+                        logger.debug(f"Scaled down persistence from {persistence:.4f} to {alpha + beta + gamma/2:.4f} for {instrument} regime {k}")
                     else:
                         alpha = alpha_raw
                         beta = beta_raw

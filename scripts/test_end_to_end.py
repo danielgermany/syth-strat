@@ -137,11 +137,19 @@ def compute_stylized_facts(returns: np.ndarray) -> Dict[str, float]:
     
     # 3. Return autocorrelation (should be near zero)
     # Compute within each path, then average
+    # For regime-switching models, use burn-in period to avoid initialization effects
     autocorr_returns_list = []
+    burn_in = 5  # Throw away first 5 returns to avoid initialization effects
+    
     for path in returns:
         path_clean = path[~np.isnan(path)]
-        if len(path_clean) > 2:
-            ac = pd.Series(path_clean).autocorr(lag=1)
+        if len(path_clean) > burn_in + 2:
+            # Use returns after burn-in period
+            path_burned = path_clean[burn_in:]
+            # Center the returns (subtract mean) before computing autocorrelation
+            # This removes any drift/mu effects from regime switching
+            path_centered = path_burned - np.mean(path_burned)
+            ac = pd.Series(path_centered).autocorr(lag=1)
             if not np.isnan(ac):
                 autocorr_returns_list.append(ac)
     autocorr_returns = float(np.mean(autocorr_returns_list)) if autocorr_returns_list else 0.0

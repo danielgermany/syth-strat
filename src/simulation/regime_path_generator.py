@@ -161,10 +161,15 @@ class RegimeSwitchingPathGenerator:
                 
                 # GARCH variance update
                 # σ²_t = ω + α*ε²_{t-1} + γ*ε²_{t-1}*I(ε<0) + β*σ²_{t-1}
-                # For first step, use expected shock (variance)
+                # For first step, generate a random initial shock to start the recursion
+                # This avoids creating structure from using a deterministic initial variance
                 if t == 0:
-                    last_shock_sq = variances[i, t]
-                    leverage = 0.5 * params.gamma * variances[i, t]  # Expected leverage
+                    # Generate a random initial shock from the initial variance
+                    # This breaks any potential correlation from using the same initial variance
+                    z_init = np.random.normal()
+                    initial_shock = np.sqrt(variances[i, t]) * z_init
+                    last_shock_sq = initial_shock ** 2
+                    leverage = params.gamma * last_shock_sq * (initial_shock < 0)
                 else:
                     last_return = np.log(prices[i, t] / prices[i, t - 1])
                     last_shock = last_return - params.mu
