@@ -243,8 +243,18 @@ class RegimeSwitchingCalibrator:
             
             if HAS_ARCH:
                 try:
-                    # Scale returns for numerical stability
-                    scale = 100
+                    # Scale returns for numerical stability (arch recommends 1-1000 range)
+                    # Using 1000x to avoid scaling warnings
+                    scale = 1000
+                    
+                    # Suppress DataScaleWarning since we're handling scaling manually
+                    import warnings
+                    try:
+                        from arch.univariate.base import DataScaleWarning
+                    except ImportError:
+                        # If DataScaleWarning doesn't exist, create a dummy class
+                        class DataScaleWarning(UserWarning):
+                            pass
                     
                     if use_gjr:
                         # GJR-GARCH for ES/NQ
@@ -263,45 +273,112 @@ class RegimeSwitchingCalibrator:
                             dist='ged'
                         )
                     
-                    result = am.fit(disp='off')
+                    # Validate data before optimization
+                    if np.any(np.isnan(returns_k)) or np.any(np.isinf(returns_k)):
+                        raise ValueError(f"Returns contain NaN or Inf values for {instrument} regime {k}")
                     
-                    # Extract parameters (scale back omega)
-                    omega = result.params.get('omega', 0.01) / (scale ** 2)
-                    alpha = result.params.get('alpha[1]', 0.1)
-                    beta = result.params.get('beta[1]', 0.85)
-                    gamma = result.params.get('gamma[1]', 0.0) if use_gjr else 0.0
-                    mu = result.params.get('mu', 0.0) / scale
-                    nu = result.params.get('nu', 6.0)
-                    skew = result.params.get('lambda', 0.0) if use_gjr else 0.0
+                    if np.var(returns_k * scale) < 1e-10:
+                        raise ValueError(f"Returns have near-zero variance for {instrument} regime {k}")
                     
-                    # Validate stationarity
-                    if alpha + beta + gamma / 2 >= 0.999:
-                        total = alpha + beta + gamma / 2
-                        factor = 0.99 / total
-                        alpha *= factor
-                        beta *= factor
-                        gamma *= factor
+                    # Fit the model with convergence options
+                    # arch package uses scipy.optimize internally and doesn't accept 'method' parameter
+                    # We can only control convergence via 'options' dict
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=DataScaleWarning)
+                        try:
+                            result = am.fit(
+                                disp='off',
+                                show_warning=False,
+                                options={'maxiter': 1000, 'ftol': 1e-6}
+                            )
+                        except Exception as e:
+                            raise RuntimeError(f"GARCH optimization failed: {e}")
+                    
+                    # Extract parameters using pandas Series access
+                    # For GJR-GARCH: ['mu', 'omega', 'alpha[1]', 'gamma[1]', 'beta[1]', 'eta', 'lambda']
+                    # For standard GARCH: ['mu', 'omega', 'alpha[1]', 'beta[1]', 'nu']
+                    
+                    omega = float(result.params.get('omega', 0.01)) / (scale ** 2)
+                    alpha_raw = float(result.params.get('alpha[1]', 0.1))
+                    beta_raw = float(result.params.get('beta[1]', 0.85))
+                    mu = float(result.params.get('mu', 0.0)) / scale
+                    
+                    # GJR-specific parameters
+                    if use_gjr:
+                        gamma_raw = float(result.params.get('gamma[1]', 0.0))
+                        # Skewed-t uses 'eta' for degrees of freedom, 'lambda' for skewness
+                        nu = float(result.params.get('eta', 6.0))  # eta, not nu
+                        skew = float(result.params.get('lambda', 0.0))
+                    else:
+                        gamma_raw = 0.0
+                        # GED uses 'nu' for shape parameter
+                        nu = float(result.params.get('nu', 1.5))
+                        skew = 0.0
+                    
+                    # Ensure non-negative (but don't force minimums that break stationarity)
+                    omega = max(omega, 1e-8)  # Only omega needs minimum > 0
+                    alpha_raw = max(alpha_raw, 0.0)  # Just ensure non-negative
+                    beta_raw = max(beta_raw, 0.0)
+                    gamma_raw = max(gamma_raw, 0.0)
+                    
+                    # Check and enforce stationarity: α + β + γ/2 < 1
+                    persistence = alpha_raw + beta_raw + gamma_raw / 2
+                    if persistence >= 0.999:
+                        # Scale down proportionally to enforce stationarity (target 0.99)
+                        scale_factor = 0.99 / persistence
+                        alpha = alpha_raw * scale_factor
+                        beta = beta_raw * scale_factor
+                        gamma = gamma_raw * scale_factor
+                    else:
+                        alpha = alpha_raw
+                        beta = beta_raw
+                        gamma = gamma_raw
+                    
+                    # Ensure nu is reasonable (for skewed-t, nu > 2 for finite variance; for GED, nu >= 1.5 to avoid overflow)
+                    if use_gjr:
+                        nu = max(nu, 2.5)  # Skewed-t: need nu > 2
+                    else:
+                        nu = max(nu, 1.5)  # GED: need nu >= 1.5 to avoid numerical overflow in likelihood calculation
                     
                     params = GARCHParams(
-                        omega=max(omega, 1e-8),
-                        alpha=max(alpha, 0.01),
-                        beta=max(beta, 0.5),
-                        gamma=max(gamma, 0.0),
+                        omega=omega,
+                        alpha=alpha,
+                        beta=beta,
+                        gamma=gamma,
                         mu=mu,
-                        nu=max(nu, 2.5),
+                        nu=nu,
                         skew=np.clip(skew, -0.5, 0.5)
                     )
                     
+                    # Verify stationarity
+                    final_persistence = params.alpha + params.beta + params.gamma / 2
+                    
+                    # Format omega with scientific notation if very small
+                    if params.omega < 1e-5:
+                        omega_str = f"ω={params.omega:.2e}"
+                    else:
+                        omega_str = f"ω={params.omega:.6f}"
+                    
                     logger.info(
                         f"{instrument.value} Regime {k}: "
-                        f"ω={params.omega:.6f}, α={params.alpha:.3f}, "
-                        f"β={params.beta:.3f}, γ={params.gamma:.3f}"
+                        f"{omega_str}, α={params.alpha:.3f}, "
+                        f"β={params.beta:.3f}, γ={params.gamma:.3f}, "
+                        f"μ={params.mu:.6f}, ν={params.nu:.2f}, "
+                        f"skew={params.skew:.3f}, persistence={final_persistence:.4f}"
                     )
+                    
+                    if final_persistence >= 1.0:
+                        logger.warning(
+                            f"{instrument.value} Regime {k}: Stationarity violation! "
+                            f"Persistence={final_persistence:.4f} >= 1.0"
+                        )
                     
                     regime_params_list.append(params)
                     
                 except Exception as e:
                     logger.warning(f"GARCH estimation failed for {instrument} regime {k}: {e}")
+                    logger.debug(f"  Returns length: {len(returns_k)}, variance: {np.var(returns_k):.2e}, "
+                                f"mean: {np.mean(returns_k):.2e}")
                     default = RegimeGARCHParams.default_for_instrument(instrument)
                     regime_params_list.append(default.regime_params[k])
             else:

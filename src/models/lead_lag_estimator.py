@@ -108,21 +108,27 @@ def estimate_lead_lag(
     
     if HAS_GRANGER:
         try:
-            # Test: does instrument_1 Granger-cause instrument_2?
-            # Data format: [effect, cause] for grangercausalitytests
-            data_12 = np.column_stack([r2, r1])  # [effect, cause]
-            gc_1_causes_2 = grangercausalitytests(data_12, maxlag=max_lag, verbose=False)
+            import warnings
             
-            # Extract p-value at lag 1 (first lag tested)
-            # grangercausalitytests returns dict with keys 1, 2, ..., maxlag
-            # Each value is a dict with test results
-            if 1 in gc_1_causes_2:
-                test_results = gc_1_causes_2[1][0]  # First test result (ssr_ftest)
-                p_1_causes_2 = test_results[1]  # p-value
-            
-            # Test: does instrument_2 Granger-cause instrument_1?
-            data_21 = np.column_stack([r1, r2])  # [effect, cause]
-            gc_2_causes_1 = grangercausalitytests(data_21, maxlag=max_lag, verbose=False)
+            # Suppress FutureWarning about deprecated 'verbose' parameter
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning, module="statsmodels")
+                
+                # Test: does instrument_1 Granger-cause instrument_2?
+                # Data format: [effect, cause] for grangercausalitytests
+                data_12 = np.column_stack([r2, r1])  # [effect, cause]
+                gc_1_causes_2 = grangercausalitytests(data_12, maxlag=max_lag, verbose=False)
+                
+                # Extract p-value at lag 1 (first lag tested)
+                # grangercausalitytests returns dict with keys 1, 2, ..., maxlag
+                # Each value is a dict with test results
+                if 1 in gc_1_causes_2:
+                    test_results = gc_1_causes_2[1][0]  # First test result (ssr_ftest)
+                    p_1_causes_2 = test_results[1]  # p-value
+                
+                # Test: does instrument_2 Granger-cause instrument_1?
+                data_21 = np.column_stack([r1, r2])  # [effect, cause]
+                gc_2_causes_1 = grangercausalitytests(data_21, maxlag=max_lag, verbose=False)
             
             if 1 in gc_2_causes_1:
                 test_results = gc_2_causes_1[1][0]  # First test result (ssr_ftest)

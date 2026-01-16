@@ -201,9 +201,11 @@ def main():
         
         for k in range(regime_params.n_regimes):
             params = regime_params.get_regime_params(k)
+            # Format omega with scientific notation if very small
+            omega_str = f"ω={params.omega:.2e}" if params.omega < 1e-5 else f"ω={params.omega:.6f}"
             logger.info(
                 f"  Regime {k}: "
-                f"ω={params.omega:.6f}, α={params.alpha:.3f}, "
+                f"{omega_str}, α={params.alpha:.3f}, "
                 f"β={params.beta:.3f}, γ={params.gamma:.3f}"
             )
     
