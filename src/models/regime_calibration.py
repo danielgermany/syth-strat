@@ -301,7 +301,13 @@ class RegimeSwitchingCalibrator:
                     omega = float(result.params.get('omega', 0.01)) / (scale ** 2)
                     alpha_raw = float(result.params.get('alpha[1]', 0.1))
                     beta_raw = float(result.params.get('beta[1]', 0.85))
-                    mu = float(result.params.get('mu', 0.0)) / scale
+                    mu_scaled = float(result.params.get('mu', 0.0))
+                    mu = mu_scaled / scale
+                    
+                    # Clamp mu to reasonable range for 1-minute returns
+                    # Typical 1-min returns are on order of 1e-5 (1 bp) to 1e-4 (10 bp)
+                    # Cap mu at ±0.0005 (50 bp) which is extreme but possible
+                    mu = np.clip(mu, -0.0005, 0.0005)
                     
                     # GJR-specific parameters
                     if use_gjr:

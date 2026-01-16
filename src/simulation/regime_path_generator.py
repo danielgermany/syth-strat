@@ -91,6 +91,22 @@ class RegimeSwitchingPathGenerator:
         
         # Initial conditions
         prices[:, 0] = initial_price
+        
+        # Ensure minimum variance floor to prevent numerical issues
+        # If initial_variance is too small or zero, use regime-weighted unconditional variance
+        min_variance = 1e-8
+        if initial_variance < min_variance:
+            # Estimate unconditional variance from regime probabilities
+            total_uncond_var = 0.0
+            for k in range(n_regimes):
+                params_k = self.regime_params.get_regime_params(k)
+                # Unconditional variance: ω / (1 - α - β - γ/2)
+                persistence = params_k.alpha + params_k.beta + params_k.gamma / 2
+                if persistence < 0.999:
+                    uncond_var = params_k.omega / (1 - persistence)
+                    total_uncond_var += initial_regime_probs[k] * uncond_var
+            initial_variance = max(total_uncond_var, min_variance)
+        
         variances[:, 0] = initial_variance
         
         # Sample initial regimes from probabilities
@@ -167,8 +183,15 @@ class RegimeSwitchingPathGenerator:
                 z = self._generate_innovation(params.nu, params.skew, params.gamma > 0)
                 
                 # Generate return and update price
-                sigma = np.sqrt(variances[i, t + 1])
+                sigma = np.sqrt(max(variances[i, t + 1], 1e-10))  # Ensure positive
                 ret = params.mu + sigma * z
+                
+                # Clip returns to prevent extreme values
+                # ES/NQ get tighter clipping (5%) to reduce autocorrelation from regime persistence
+                # GC/SI get slightly looser clipping (7%) to allow for occasional larger moves
+                max_ret = 0.05 if self.instrument.is_equity_index else 0.07
+                ret = np.clip(ret, -max_ret, max_ret)
+                
                 prices[i, t + 1] = prices[i, t] * np.exp(ret)
         
         return prices, variances, regimes
