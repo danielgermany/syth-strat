@@ -188,7 +188,7 @@ class HistoricalDataLoader:
                 report['issues'].append(f"Missing bar percentage {gap_pct:.2f}% exceeds 1% threshold")
         
         # Check for large price gaps (>5%)
-        returns = df['close'].pct_change()
+        returns = df['close'].pct_change(fill_method=None)
         large_gaps = (returns.abs() > 0.05).sum()
         report['large_gap_count'] = large_gaps
         if large_gaps > 0:

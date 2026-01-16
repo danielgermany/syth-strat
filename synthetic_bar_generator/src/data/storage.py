@@ -104,6 +104,12 @@ class DataStorage:
         
         df_to_store['symbol'] = symbol
         
+        # Fill NaN values and ensure proper data types
+        df_to_store['volume'] = pd.to_numeric(df_to_store['volume'], errors='coerce').fillna(0).astype(int)
+        
+        # Remove rows with NaN in required OHLC columns
+        df_to_store = df_to_store.dropna(subset=['open', 'high', 'low', 'close'])
+        
         # Select columns in correct order
         columns = ['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
         if 'trade_count' in df_to_store.columns:
@@ -111,20 +117,55 @@ class DataStorage:
         
         df_to_store = df_to_store[columns]
         
-        # Insert with ignore to handle duplicates
-        df_to_store.to_sql(
-            'bars', 
-            conn, 
-            if_exists='append', 
-            index=False,
-            method='multi'
-        )
+        # Insert with chunking to avoid "too many SQL variables" error
+        # SQLite limit is 999 variables, so chunk size should be < 999 / num_columns
+        # We have 7-8 columns, so chunk size of 100 is safe
+        chunk_size = 100
+        n_chunks = (len(df_to_store) + chunk_size - 1) // chunk_size
+        
+        n_stored_total = 0
+        for i in range(n_chunks):
+            chunk = df_to_store.iloc[i * chunk_size:(i + 1) * chunk_size]
+            # Use INSERT OR IGNORE to handle duplicates gracefully
+            try:
+                chunk.to_sql(
+                    'bars', 
+                    conn, 
+                    if_exists='append', 
+                    index=False,
+                    method='multi'
+                )
+                n_stored_total += len(chunk)
+            except sqlite3.IntegrityError:
+                # Handle duplicates by using INSERT OR IGNORE for each row
+                cursor = conn.cursor()
+                for _, row in chunk.iterrows():
+                    try:
+                        trade_count = int(row['trade_count']) if pd.notna(row.get('trade_count')) else None
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO bars (symbol, timestamp, open, high, low, close, volume, trade_count)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            str(row['symbol']),
+                            int(row['timestamp']),
+                            float(row['open']),
+                            float(row['high']),
+                            float(row['low']),
+                            float(row['close']),
+                            int(row['volume']),
+                            trade_count
+                        ))
+                        if cursor.rowcount > 0:
+                            n_stored_total += 1
+                    except Exception as e:
+                        logger.debug(f"Error inserting row: {e}")
+                        continue
+                conn.commit()
         
         conn.close()
         
-        n_stored = len(df_to_store)
-        logger.info(f"Stored {n_stored} bars for {symbol}")
-        return n_stored
+        logger.info(f"Stored {n_stored_total} bars for {symbol} (skipped {len(df_to_store) - n_stored_total} duplicates)")
+        return n_stored_total
     
     def load_bars(
         self,
