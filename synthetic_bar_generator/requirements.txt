@@ -1,0 +1,15 @@
+# Data handling
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Statistical modeling
+scipy>=1.11.0
+statsmodels>=0.14.0     # GARCH implementation baseline
+arch>=6.0.0             # Production GARCH/A-GARCH
+
+# Numerical methods
+numba>=0.58.0           # JIT compilation for simulation loops
+
+# Testing
+pytest>=7.4.0
+hypothesis>=6.82.0      # Property-based testing
