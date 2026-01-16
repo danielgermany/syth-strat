@@ -150,9 +150,8 @@ def main():
         logger.error("Please run load_historical_data.py first")
         return 1
     
-    # Initialize storage (to ensure tables exist)
+    # Initialize storage (schema is initialized automatically in __init__)
     storage = DataStorage(str(db_path))
-    storage.initialize_db()
     
     # Instruments to calibrate
     instruments = [Instrument.ES, Instrument.NQ, Instrument.GC, Instrument.SI]
