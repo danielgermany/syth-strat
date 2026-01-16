@@ -11,6 +11,7 @@ from .garch import GARCHModel
 from .agarch import AGARCHModel
 from .heston import HestonModel, HestonParams
 from .jump_diffusion import JumpDiffusionModel, JumpParams
+from .svcj import SVCJModel, SVCJParams
 
 __all__ = [
     'GARCHParams',
@@ -29,4 +30,6 @@ __all__ = [
     'HestonParams',
     'JumpDiffusionModel',
     'JumpParams',
+    'SVCJModel',
+    'SVCJParams',
 ]
