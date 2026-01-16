@@ -76,6 +76,7 @@ class RegimeSwitchingCalibrator:
         self.transition_matrices: Dict[Instrument, TransitionMatrix] = {}
         self.lead_lag_results: Dict[Tuple[Instrument, Instrument], LeadLagResult] = {}
         self.calibration_date: Optional[datetime] = None
+        self._last_data: Dict[Instrument, pd.DataFrame] = {}  # Store last calibration data
     
     def calibrate_all(
         self,
@@ -90,6 +91,7 @@ class RegimeSwitchingCalibrator:
             as_of_date: Calibration date (uses end of data if None)
         """
         self.calibration_date = as_of_date or datetime.now()
+        self._last_data = data  # Store for use in calibration script
         
         # Phase 1 & 2: Regime detection and per-regime GARCH for each instrument
         for instrument in self.instruments:

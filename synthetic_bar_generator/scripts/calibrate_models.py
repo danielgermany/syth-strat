@@ -98,8 +98,19 @@ def save_calibration_results(
     calibration_timestamp = int(calibrator.calibration_date.timestamp())
     
     # Save regime-specific GARCH parameters
+    # Note: regime is included in param_name (e.g., 'omega_regime_0')
+    # since the schema doesn't have a separate regime column
     for instrument, regime_params in calibrator.regime_params.items():
         symbol = instrument.value
+        
+        # Get window bounds from data
+        if instrument in calibrator._last_data:  # Will be set during calibration
+            window_start = int(calibrator._last_data[instrument].index[0].timestamp())
+            window_end = int(calibrator._last_data[instrument].index[-1].timestamp())
+        else:
+            # Fallback: use calibration date
+            window_start = calibration_timestamp - (90 * 24 * 60 * 60)  # 90 days back
+            window_end = calibration_timestamp
         
         for regime_k in range(regime_params.n_regimes):
             params = regime_params.get_regime_params(regime_k)
@@ -110,15 +121,16 @@ def save_calibration_results(
                 
                 cursor.execute("""
                     INSERT OR REPLACE INTO calibration_params
-                    (symbol, model_type, param_name, param_value, calibration_date, regime)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (symbol, model_type, param_name, param_value, calibration_date, window_start, window_end)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     symbol,
                     'regime_garch',
                     f'{param_name}_regime_{regime_k}',
                     param_value,
                     calibration_timestamp,
-                    regime_k
+                    window_start,
+                    window_end
                 ))
     
     conn.commit()
