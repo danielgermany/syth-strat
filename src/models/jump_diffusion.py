@@ -167,7 +167,8 @@ class JumpDiffusionModel:
         self,
         returns: np.ndarray,
         dt: float = 1.0 / (252 * 390),  # Default: 1 minute in years
-        threshold_percentile: float = 95
+        threshold_method: str = 'std_multiple',
+        threshold_value: float = 5.0  # For 'std_multiple': multiple of std, for 'percentile': percentile value
     ) -> JumpParams:
         """
         Estimate jump parameters from historical returns.
@@ -180,18 +181,33 @@ class JumpDiffusionModel:
         Args:
             returns: Array of log returns
             dt: Time step size in years
-            threshold_percentile: Percentile threshold for identifying jumps (default: 95th)
+            threshold_method: Method for identifying jumps ('std_multiple' or 'percentile')
+            threshold_value: 
+                - For 'std_multiple': multiple of standard deviation (default: 5.0)
+                - For 'percentile': percentile value (default: 99.9 for rare jumps)
             
         Returns:
             Fitted JumpParams
         """
-        # Threshold for identifying jumps (absolute returns)
+        # Threshold for identifying jumps
         abs_returns = np.abs(returns)
-        threshold = np.percentile(abs_returns, threshold_percentile)
         
-        # Separate returns into normal (diffusion) and jumps
-        normal_mask = abs_returns <= threshold
-        jump_mask = ~normal_mask
+        if threshold_method == 'std_multiple':
+            # Use multiple of standard deviation (more robust, instrument-specific)
+            mean_ret = np.mean(returns)
+            std_ret = np.std(returns)
+            threshold = threshold_value * std_ret
+            # Center around mean for jump detection
+            centered_abs = np.abs(returns - mean_ret)
+            jump_mask = centered_abs > threshold
+            normal_mask = ~jump_mask
+        elif threshold_method == 'percentile':
+            # Use percentile threshold (default to 99.9 for rare jumps)
+            threshold = np.percentile(abs_returns, threshold_value)
+            jump_mask = abs_returns > threshold
+            normal_mask = ~jump_mask
+        else:
+            raise ValueError(f"Unknown threshold_method: {threshold_method}")
         
         normal_returns = returns[normal_mask]
         jump_returns = returns[jump_mask]

@@ -97,13 +97,20 @@ def test_jump_diffusion_model(instrument: Instrument, n_paths: int = 1000, horiz
     returns = np.diff(np.log(df['close'].values))
     recent_returns = returns[-5000:]  # Use recent data for fitting
     
-    # Fit jump-diffusion model
-    logger.info("Fitting jump-diffusion model...")
-    dt = 1.0 / (252 * 390)  # 1 minute in years
-    
-    try:
-        jump_model = JumpDiffusionModel()
-        jump_params = jump_model.fit(recent_returns, dt=dt, threshold_percentile=95)
+        # Fit jump-diffusion model
+        logger.info("Fitting jump-diffusion model...")
+        dt = 1.0 / (252 * 390)  # 1 minute in years
+        
+        try:
+            jump_model = JumpDiffusionModel()
+            # Use 5 std threshold for jump detection (more robust than percentile)
+            # Percentile method gives same jump count for all instruments (always 5%)
+            jump_params = jump_model.fit(
+                recent_returns, 
+                dt=dt, 
+                threshold_method='std_multiple',
+                threshold_value=5.0  # 5 standard deviations = rare jumps
+            )
         
         logger.info(f"Jump-diffusion parameters:")
         logger.info(f"  σ (sigma): {jump_params.sigma:.6f} (annualized)")
